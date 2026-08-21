@@ -34,19 +34,54 @@ class ArithmeticWordProblemTask(Task):
 
 
 @dataclass
+class ExactAnswerTask(Task):
+    """Deterministic: compare a short text answer exactly (case-insensitive by
+    default). Good for trivia, multi-hop QA, or any task with one correct
+    short answer that isn't purely numeric."""
+
+    id: str
+    problem: str
+    expected_answer: str
+    case_sensitive: bool = False
+
+    def build_prompt(self) -> str:
+        return (
+            f"{self.problem}\n\n"
+            "Give the final answer alone on the last line, formatted exactly "
+            "as: ANSWER: <answer>"
+        )
+
+    def evaluate(self, output: str, judge: "LLMClient | None" = None) -> tuple[bool, float]:
+        match = re.search(r"ANSWER:\s*(.+)", output)
+        if not match:
+            return False, 0.0
+        got, expected = match.group(1).strip(), self.expected_answer.strip()
+        if not self.case_sensitive:
+            got, expected = got.lower(), expected.lower()
+        success = got == expected
+        return success, 1.0 if success else 0.0
+
+
+@dataclass
 class JsonExtractionTask(Task):
     """Deterministic: parse the JSON the agent produces and diff it against the
-    expected fields."""
+    expected fields. `instructions` defaults to a plain extraction prompt but
+    can be overridden (e.g. to frame the same field-diff scoring around a
+    puzzle to solve instead of a text to extract from)."""
 
     id: str
     source_text: str
     expected_fields: dict
+    instructions: str | None = None
 
     def build_prompt(self) -> str:
-        fields = ", ".join(self.expected_fields.keys())
+        header = self.instructions or (
+            f"Extract the following fields from the text below: "
+            f"{', '.join(self.expected_fields.keys())}."
+        )
+        body = f"{header}\n\n{self.source_text}" if self.source_text else header
         return (
-            f"Extract the following fields from the text below: {fields}.\n\n"
-            f"TEXT:\n{self.source_text}\n\n"
+            f"{body}\n\n"
             "Respond with a single JSON object on the last line, and nothing "
             "else after it."
         )
@@ -94,6 +129,31 @@ class ConstrainedWritingTask(Task):
         lowered = output.lower()
         checks += [w.lower() in lowered for w in self.must_include]
         checks += [w.lower() not in lowered for w in self.must_not_include]
+        score = sum(checks) / len(checks) if checks else 0.0
+        return all(checks), score
+
+
+@dataclass
+class FormattedListTask(Task):
+    """Deterministic: check precise instruction-following on output shape —
+    an exact bullet count, each bullet under a word limit."""
+
+    id: str
+    instructions: str
+    required_bullet_count: int
+    max_words_per_bullet: int
+
+    def build_prompt(self) -> str:
+        return (
+            f"{self.instructions}\n\n"
+            f"Format: exactly {self.required_bullet_count} bullet points, each "
+            f"starting with '- ' and at most {self.max_words_per_bullet} words."
+        )
+
+    def evaluate(self, output: str, judge: "LLMClient | None" = None) -> tuple[bool, float]:
+        bullets = [line.strip()[2:] for line in output.splitlines() if line.strip().startswith("- ")]
+        checks = [len(bullets) == self.required_bullet_count]
+        checks += [len(b.split()) <= self.max_words_per_bullet for b in bullets]
         score = sum(checks) / len(checks) if checks else 0.0
         return all(checks), score
 
@@ -169,6 +229,51 @@ def get_tasks() -> list[Task]:
                 "A strong answer: sequences the migration in clear phases, "
                 "addresses data export/import and permissions, calls out user "
                 "training/communication, and flags at least one concrete risk."
+            ),
+        ),
+        ExactAnswerTask(
+            id="multihop_qa_1",
+            problem=(
+                "The Zenith Bridge was completed in 1978. The engineer who "
+                "designed the Zenith Bridge, Maria Kovac, later designed the "
+                "Lumen Tower, which was completed 16 years after the bridge.\n\n"
+                "Question: In what year was the Lumen Tower completed?"
+            ),
+            expected_answer="1994",
+        ),
+        JsonExtractionTask(
+            id="logic_puzzle_1",
+            instructions=(
+                "Solve the logic puzzle below. Alice, Ben, and Cara each drink "
+                "a different beverage: coffee, tea, or water.\n"
+                "1. Alice does not drink coffee.\n"
+                "2. Ben drinks tea.\n"
+                "3. Cara does not drink water.\n"
+                "Determine what each person drinks."
+            ),
+            source_text="",
+            expected_fields={"alice": "water", "ben": "tea", "cara": "coffee"},
+        ),
+        FormattedListTask(
+            id="formatted_list_1",
+            instructions=(
+                "List the main risks of launching a product without a beta "
+                "test phase."
+            ),
+            required_bullet_count=3,
+            max_words_per_bullet=12,
+        ),
+        OpenEndedJudgeTask(
+            id="tradeoff_1",
+            question=(
+                "A startup must choose between Postgres and MongoDB for a new "
+                "product with evolving schema requirements and a small team. "
+                "Recommend one, in under 150 words."
+            ),
+            rubric=(
+                "A strong answer picks one option, justifies it against the "
+                "stated constraints (evolving schema, small team), and "
+                "acknowledges at least one concrete downside of the choice."
             ),
         ),
     ]

@@ -1,21 +1,7 @@
-from agentbench.agents.llm import LLMClient, LLMResponse
 from agentbench.agents.multi_agent import run_multi_agent
 from agentbench.agents.single_agent import run_single_agent
-from agentbench.metrics import CallLog, RunResult, summarize
-
-
-class ScriptedLLMClient(LLMClient):
-    """Returns canned responses in order, so graph control-flow can be tested
-    without hitting the real Anthropic API."""
-
-    def __init__(self, responses: list[str]):
-        super().__init__(CallLog())
-        self._responses = list(responses)
-
-    def complete(self, system: str, user: str) -> LLMResponse:
-        text = self._responses.pop(0)
-        self.call_log.record(input_tokens=10, output_tokens=10, cost_usd=0.001)
-        return LLMResponse(text=text)
+from agentbench.metrics import RunResult, summarize
+from tests.fakes import ScriptedLLMClient
 
 
 def test_single_agent_stops_on_done():
