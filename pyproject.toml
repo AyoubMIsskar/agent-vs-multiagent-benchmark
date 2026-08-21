@@ -1,0 +1,17 @@
+[project]
+name = "agentbench"
+version = "0.1.0"
+description = "Comparatif single-agent vs multi-agent (LangGraph + Claude)"
+requires-python = ">=3.10"
+dependencies = [
+    "langgraph>=0.2.0",
+    "langchain-anthropic>=0.3.0",
+    "langchain-core>=0.3.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0.0"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
