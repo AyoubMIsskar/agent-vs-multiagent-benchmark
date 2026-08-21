@@ -11,7 +11,6 @@ DEFAULT_PRICING = (3.00, 15.00)
 
 DEFAULT_MODEL = os.environ.get("AGENTBENCH_MODEL", "claude-sonnet-5")
 DEFAULT_MAX_ITERS = int(os.environ.get("AGENTBENCH_MAX_ITERS", "3"))
-DEFAULT_TEMPERATURE = 0.0
 
 
 def cost_usd(model: str, input_tokens: int, output_tokens: int) -> float:
